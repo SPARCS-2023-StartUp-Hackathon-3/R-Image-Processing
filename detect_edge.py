@@ -167,9 +167,6 @@ def upload_file():
         img = cv.imread(file.filename)
 
         img_result, img_resize = process_from_img(img)
-        cv.imshow("test", img_result)
-        cv.waitKey()
-        cv.destroyAllWindows()
 
         edge_serial = cv.imencode(".png", img_result)[1].tobytes()
         img_serial = cv.imencode(".jpg", img_resize)[1].tobytes()
