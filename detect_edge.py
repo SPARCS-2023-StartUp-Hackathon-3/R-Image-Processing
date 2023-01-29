@@ -4,6 +4,7 @@ import cv2 as cv
 from flask import Flask, request
 import boto3, botocore
 from werkzeug.utils import secure_filename
+from werkzeug.datastructures import FileStorage
 from config import (
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -62,7 +63,6 @@ def s3_put_object(s3, file, filename, contenttype):
     try:
         if prefix_exists(s3, file):
             # 이미 존재하는 file
-            print("that file is already exists")
             return False
         else:
             response = s3.put_object(
@@ -137,7 +137,13 @@ def process_from_img(img, scale1=4, scale2=4, size=270):
 
     result = afterprocessing(src, filter=5, iterations=2)
     # result = cv.addWeighted(img_resize, 0.5, result, 0.5, 0)
-    return result
+    return result, img_resize
+
+
+@app.route("/select", methods=["GET"])
+def get_guide(id):
+
+    return
 
 
 # detect edge and save image & save edge in S3
@@ -156,18 +162,34 @@ def upload_file():
         file.filename = secure_filename(file.filename)
         filename_edge = secure_filename(filename_edge)
 
-        file_bytes = np.fromfile(file, np.uint8)
-        img = cv.imdecode(file_bytes, cv.IMREAD_COLOR)
-        img_result = process_from_img(img)
+        file.save(file.filename)
+
+        img = cv.imread(file.filename)
+
+        img_result, img_resize = process_from_img(img)
+        cv.imshow("test", img_result)
+        cv.waitKey()
+        cv.destroyAllWindows()
 
         edge_serial = cv.imencode(".png", img_result)[1].tobytes()
-        img_serial = cv.imencode(".jpg", img)[1].tobytes()
+        img_serial = cv.imencode(".jpg", img_resize)[1].tobytes()
 
         s3 = s3_connection()
-        bool1 = s3_put_object(s3, edge_serial, filename_edge, "image/png")
-        bool2 = s3_put_object(s3, img_serial, file.filename, "image/jpg")
-        print(bool1)
-        print(bool2)
+
+        bool1 = s3.put_object(
+            Body=str(edge_serial),
+            Bucket=BUCKET_NAME,
+            Key=filename_edge,
+            ContentType="image/png",
+            ACL="private",
+        )
+        bool2 = s3.put_object(
+            Body=str(img_serial),
+            Bucket=BUCKET_NAME,
+            Key=file.filename,
+            ContentType="image/jpg",
+            ACL="private",
+        )
         db = DB_connection()
         cursor = db.cursor()
 
@@ -178,17 +200,13 @@ def upload_file():
             edge_id=os.path.splitext(filename_edge)[0],
             edge_fname=filename_edge,
         )
-        print(sql)
         cursor.execute(sql)
         db.commit()
 
         db.close()
         cursor.close()
 
-        if bool1 & bool2:
-            return "image & edge is saved in S3"
-        else:
-            return "what? image or edge assert"
+        return "normal"
     else:
         return "file is abnormal"
 
